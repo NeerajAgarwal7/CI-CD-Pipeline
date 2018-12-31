@@ -1,0 +1,81 @@
+node {
+    
+    try{
+    def mvn_version="Maven"
+    stage('Preparation') { 
+        git 'https://github.com/NeerajAgarwal7/CarApplication.git'
+    }
+   
+    stage('Code Qaulity') {
+        withEnv( ["PATH+MAVEN=${tool mvn_version}/bin"] ){
+            withSonarQubeEnv('mySonar'){
+                sh 'mvn sonar:sonar'
+            }
+        }
+        
+    }
+    
+    stage("SonarQube Quality Gate") { 
+       withSonarQubeEnv('mySonar'){
+            timeout(time: 1, unit: 'HOURS') { 
+                def qg = waitForQualityGate() 
+                if (qg.status != 'OK') {
+                    error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                }
+            }
+        }
+    }
+ 
+   stage('Build') {
+       withEnv( ["PATH+MAVEN=${tool mvn_version}/bin"] ){
+                sh 'mvn clean install'
+               //echo env.CAR_ISSUE
+        }
+   }
+    }catch(err){
+            currentBuild.result = 'FAILURE'
+        }
+        
+    stage('JIRA') {
+        withEnv(['JIRA_SITE=my_jira']) {
+            if(currentBuild.result == 'FAILURE'){
+                if(currentBuild.previousBuild.result!='FAILURE'){
+                    def testIssue = [fields: [ project: [key: 'CAR'],
+                                 summary: 'Build Fail',
+                                 description: 'Build has failed for the Car App application.',
+                                 issuetype: [name: 'Bug']]]
+
+                    response = jiraNewIssue issue: testIssue
+
+                    echo response.successful.toString()
+                    echo response.data.toString()
+                    env.CAR_ISSUE=response.data.key
+                    echo env.CAR_ISSUE
+                    jiraAssignIssue idOrKey: env.CAR_ISSUE, userName: 'devopsguy.mayank'
+                    sh 'echo $CAR_ISSUE > /var/lib/jenkins/jira-ticket.txt'
+                }
+                else if(currentBuild.previousBuild.result=='FAILURE'){
+                    def issue=readFile '/var/lib/jenkins/jira-ticket.txt'
+                    issue=issue.trim()
+                    echo issue
+                    jiraAddComment idOrKey:issue, comment: 'Build is still Failing'
+                }
+            }
+            else if(currentBuild.previousBuild.result=='FAILURE'){
+                def transitionInput =
+                [
+                    transition: [
+                        id: '41'
+                    ]
+                ]
+                def issue=readFile '/var/lib/jenkins/jira-ticket.txt'
+                    issue=issue.trim()
+                jiraTransitionIssue idOrKey:issue, input: transitionInput
+                
+                jiraAddComment idOrKey:issue, comment: 'Build is successful' 
+                
+            }
+        }
+   }
+    
+}
