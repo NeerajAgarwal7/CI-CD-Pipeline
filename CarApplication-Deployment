@@ -1,0 +1,37 @@
+node{
+    
+    def server =Artifactory.server 'my_artifactory'
+    
+    stage('upload to artifactory'){
+        def uploadSpec = """{
+     "files": [
+           {
+              "pattern": "/var/lib/jenkins/workspace/Project-management-integration/target/*.war",
+              "target": "jenkins-snapshot"
+           }
+        ]
+        }"""
+    server.upload(uploadSpec)
+
+    }
+    
+    stage('downloading artifact')
+    {
+        def downloadSpec="""{
+        "files":[
+        {
+           "pattern":"jenkins-snapshot/CarApp.war",
+            "target":"/var/lib/jenkins/warfiles/"
+        }
+        ]
+        }"""
+    server.download(downloadSpec)
+    }
+    
+    stage('deploy to tomcat'){
+        //sh 'sudo su'
+        sh 'scp /var/lib/jenkins/warfiles/*.war neeraj@tomcatserver1.eastus.cloudapp.azure.com:"/opt/tomcat/webapps"'
+        //sh './upload.sh'
+    }
+
+}
